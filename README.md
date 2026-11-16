@@ -20,7 +20,7 @@
 | **Made for cheap phones** | ~280 KB app, installs to the home screen (PWA), opens offline, big buttons, French by default with English available, light and dark mode. |
 
 ## Try it
-- **Live:** https://jaay.onrender.com (signet). Tap *Créer mon portefeuille*, write down the 12 words, choose a PIN, sell.
+- **Live:** https://jaay-r9za.onrender.com (signet). Tap *Créer mon portefeuille*, write down the 12 words, choose a PIN, sell.
 - **Test coins:** get signet bitcoin from https://signetfaucet.com/ and send them to the address in *Portefeuille*.
 - **Lightning (optional):** in *Réglages*, paste a `nostr+walletconnect://…` string from a wallet that supports NWC (e.g. Alby Hub, Coinos) set to a test network.
 
