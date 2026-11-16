@@ -7,6 +7,7 @@ import { STRINGS, MORE } from './i18n.js';
 import { makePayLink, whatsappUrl, reminderText, receiptText } from '../shared/paylink.js';
 import { dayTotals, lastDays, toCsv } from '../shared/report.js';
 import * as NB from './nostr-backup.js';
+import { cleanText } from '../shared/text.js';
 
 // ---------- state & storage ----------
 const KEY = 'jaay.v1';
@@ -63,7 +64,7 @@ function render() {
   app.innerHTML = `
     <header class="top"><b>Jaay${S.shop ? ' · ' + esc(S.shop) : ''}</b><span class="net">${esc(t('testnet'))}</span></header>
     <main id="view"></main>
-    <nav class="tabs">${tabs.map(([k, ic, l]) => `<button data-act="tab" data-v="${k}" class="${view === k ? 'on' : ''}"><span>${ic}</span>${esc(l)}</button>`).join('')}</nav>`;
+    <nav class="tabs" aria-label="Navigation">${tabs.map(([k, ic, l]) => `<button data-act="tab" data-v="${k}" class="${view === k ? 'on' : ''}" ${view === k ? 'aria-current="page"' : ''}><span aria-hidden="true">${ic}</span>${esc(l)}</button>`).join('')}</nav>`;
   ({ sell: viewSell, book: viewBook, report: viewReport, wallet: viewWallet, settings: viewSettings })[view]();
 }
 const V = () => $('#view');
@@ -81,27 +82,27 @@ function renderOnboarding() {
       <button class="pri big" data-act="ob-check">${esc(t('next'))}</button></section>`;
   } else if (ob.step === 'check') {
     app.innerHTML = `<section class="card"><h2>${esc(t('phraseCheck'))} ${ob.check + 1} ?</h2>
-      <input id="w" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="text">
-      <p id="err" class="err"></p><button class="pri big" data-act="ob-checked">${esc(t('next'))}</button>
+      <input id="w" aria-label="${esc(t('phraseCheck'))} ${ob.check + 1}" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="text">
+      <p id="err" class="err" role="alert"></p><button class="pri big" data-act="ob-checked">${esc(t('next'))}</button>
       <button class="link" data-act="ob-back">${esc(t('back'))}</button></section>`;
   } else if (ob.step === 'restore') {
     app.innerHTML = `<section class="card"><h2>${esc(t('restore'))}</h2><p>${esc(t('restoreHelp'))}</p>
-      <textarea id="phrase" rows="3" autocomplete="off" autocapitalize="none" spellcheck="false"></textarea>
-      <p id="err" class="err"></p><button class="pri big" data-act="ob-restored">${esc(t('next'))}</button>
+      <textarea id="phrase" aria-label="${esc(t('restoreHelp'))}" rows="3" autocomplete="off" autocapitalize="none" spellcheck="false"></textarea>
+      <p id="err" class="err" role="alert"></p><button class="pri big" data-act="ob-restored">${esc(t('next'))}</button>
       <button class="link" data-act="ob-start">${esc(t('back'))}</button></section>`;
   } else if (ob.step === 'pin') {
     app.innerHTML = `<section class="card"><h2>${esc(t('pinTitle'))}</h2><p>${esc(t('pinHelp'))}</p>
-      <input id="p1" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••••">
-      <input id="p2" type="password" inputmode="numeric" autocomplete="new-password" placeholder="${esc(t('pinAgain'))}">
-      <p id="err" class="err"></p><button class="pri big" data-act="ob-pin">${esc(t('next'))}</button></section>`;
+      <input id="p1" aria-label="PIN" type="password" inputmode="numeric" autocomplete="new-password" placeholder="••••••">
+      <input id="p2" aria-label="${esc(t('pinAgain'))}" type="password" inputmode="numeric" autocomplete="new-password" placeholder="${esc(t('pinAgain'))}">
+      <p id="err" class="err" role="alert"></p><button class="pri big" data-act="ob-pin">${esc(t('next'))}</button></section>`;
   }
 }
 const langSwitch = () => `<div class="lang"><button data-act="lang" data-v="fr" class="${S.lang === 'fr' ? 'on' : ''}">Français</button><button data-act="lang" data-v="en" class="${S.lang === 'en' ? 'on' : ''}">English</button></div>`;
 
 function renderUnlock() {
   app.innerHTML = `<section class="hero"><h1>Jaay</h1><p>${esc(t('locked'))}</p>
-    <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="${esc(t('pinEnter'))}">
-    <p id="err" class="err"></p><button class="pri big" data-act="unlock">${esc(t('unlock'))}</button>${langSwitch()}</section>`;
+    <input id="pin" aria-label="PIN" type="password" inputmode="numeric" autocomplete="current-password" placeholder="${esc(t('pinEnter'))}">
+    <p id="err" class="err" role="alert"></p><button class="pri big" data-act="unlock">${esc(t('unlock'))}</button>${langSwitch()}</section>`;
   setTimeout(() => $('#pin')?.focus(), 50);
 }
 
@@ -115,17 +116,17 @@ function viewSell() {
     <section class="card">
       ${S.catalog.length ? `<div class="chips">${S.catalog.map((c, i) => `<button data-act="cat" data-v="${i}">${esc(c.name)} · ${fmt(c.xof)}</button>`).join('')}</div>` : ''}
       <label>${esc(t('amountCfa'))}<input id="amt" inputmode="numeric" placeholder="0" autocomplete="off"></label>
-      <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '000', 0, '⌫'].map((k) => `<button data-act="key" data-v="${k}">${k}</button>`).join('')}</div>
+      <div class="pad" role="group" aria-label="${esc(t('amountCfa'))}">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '000', 0, '⌫'].map((k) => `<button data-act="key" data-v="${k}"${k === '⌫' ? ' aria-label="Effacer"' : ''}>${k}</button>`).join('')}</div>
       <label>${esc(t('item'))}<input id="item" maxlength="60" autocomplete="off"></label>
       <p class="muted small">${sats1000 ? esc(t('rate', { sats: fmt(sats1000) })) : ''}</p>
       <button class="pri big" data-act="charge">${esc(t('charge'))}</button>
       <button class="link small" data-act="save-item">＋ ${esc(t('saveItem'))}</button>
-      <p id="err" class="err"></p>
+      <p id="err" class="err" role="alert"></p>
     </section>
     <section class="card">
       <label>${esc(t('orWrite'))}<input id="note" maxlength="300" placeholder="${esc(t('writeExample'))}" autocomplete="off"></label>
       <div class="row"><button data-act="note">${esc(t('read'))}</button>${voice ? `<button class="mic" data-act="mic">🎙 ${esc(t('speak'))}</button>` : ''}</div>
-      <p id="noteOut" class="small"></p>
+      <p id="noteOut" class="small" aria-live="polite"></p>
     </section>
     <section class="card"><h3>${esc(t('todaySales'))}</h3>
       <div class="stats"><div><b>${fmt(d.total)}</b>FCFA</div><div><b>${d.count}</b>${esc(t('sales'))}</div><div><b>${fmt(d.sats)}</b>sats</div></div>
@@ -214,21 +215,22 @@ function viewPay() {
         <button data-act="method" data-v="onchain" class="${p.method === 'onchain' ? 'on' : ''}">₿ ${esc(t('onchain'))}</button>
         <button data-act="cash">💵 ${esc(t('cash'))}</button></div>
       ${p.error ? `<p class="err">${esc(p.error)}</p>` : ''}
-      <div class="qr">${ready ? qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }) : '<p class="muted">…</p>'}</div>
+      <div class="qr" role="img" aria-label="QR ${fmt(p.xof)} FCFA">${ready ? qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }) : '<p class="muted">…</p>'}</div>
       <p class="muted small">${esc(t('scan'))}</p>
       <p class="mono small">${esc(p.method === 'lightning' ? (p.invoice || '').slice(0, 32) + '…' : p.address)}</p>
       <div class="row"><button data-act="copy" data-v="${esc(uri)}">${esc(t('copy'))}</button></div>
       ${p.method === 'onchain' ? `<a class="btnlink wa" href="${esc(whatsappUrl(`${S.shop ? S.shop + ' : ' : ''}${p.item || 'Paiement'} — ${fmt(p.xof)} FCFA. ${link}`))}" target="_blank" rel="noopener noreferrer">💬 ${esc(t('shareWa'))}</a>` : ''}
-      <p class="wait">${navigator.onLine ? esc(t('waiting')) : esc(t('offline'))}</p>
+      <p class="wait" aria-live="polite">${navigator.onLine ? esc(t('waiting')) : esc(t('offline'))}</p>
       <button class="link" data-act="cancel-pay">${esc(t('cancel'))}</button></section>`;
 }
 
 // ---------- credit book ----------
-function addCreditEntry(name, xof, note, phone) {
-  const key = name.trim().toLowerCase();
-  const c = S.credits[key] || (S.credits[key] = { name: name.trim(), entries: [] });
+function addCreditEntry(rawName, xof, note, phone) {
+  const name = cleanText(rawName, 40);
+  const key = name.toLowerCase();
+  const c = S.credits[key] || (S.credits[key] = { name, entries: [] });
   if (phone) c.phone = String(phone).replace(/[^\d+]/g, '').slice(0, 16);
-  c.entries.unshift({ at: Date.now(), xof, note: String(note || '').slice(0, 80) });
+  c.entries.unshift({ at: Date.now(), xof, note: cleanText(note, 80) });
   c.entries = c.entries.slice(0, 200);
 }
 const owed = (c) => c.entries.reduce((s, e) => s + e.xof, 0);
@@ -250,7 +252,7 @@ function viewBook() {
       <label>${esc(t('amountCfa'))}<input id="camt" inputmode="numeric" autocomplete="off"></label>
       <label>${esc(t('item'))}<input id="citem" maxlength="60" autocomplete="off"></label>
       <label>${esc(t('phone'))}<input id="cphone" inputmode="tel" maxlength="16" autocomplete="off" placeholder="+221…"></label>
-      <button class="pri" data-act="add-credit">${esc(t('addCredit'))}</button><p id="err" class="err"></p></section>`;
+      <button class="pri" data-act="add-credit">${esc(t('addCredit'))}</button><p id="err" class="err" role="alert"></p></section>`;
 }
 
 // ---------- report ----------
@@ -299,13 +301,13 @@ function viewWallet() {
       <p class="amount">${w ? fmt(w.confirmed) : '…'} sats</p>
       <p class="muted">${w && rate ? '≈ ' + fmt(W.satsToXof(w.confirmed, rate.btcEur)) + ' FCFA' : ''}${w && w.pending ? ` · +${fmt(w.pending)} ${esc(t('pending'))}` : ''}</p>
       <button data-act="refresh">${esc(t('refresh'))}</button></section>
-    <section class="card"><h3>${esc(t('receive'))}</h3><div class="qr">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>
+    <section class="card"><h3>${esc(t('receive'))}</h3><div class="qr" role="img" aria-label="QR ${esc(recv)}">${qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>
       <p class="mono small">${esc(recv)}</p><button data-act="copy" data-v="${esc(recv)}">${esc(t('copy'))}</button>
       <p class="small"><a href="https://signetfaucet.com/" target="_blank" rel="noopener noreferrer">${esc(t('faucet'))}</a></p></section>
     <section class="card"><h3>${esc(t('send'))}</h3>
       <label>${esc(t('to'))}<input id="to" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="tb1…"></label>
       <label>${esc(t('amountSats'))}<input id="sats" inputmode="numeric" autocomplete="off"></label>
-      <button class="pri" data-act="send">${esc(t('sendNow'))}</button><p id="err" class="err"></p><p id="sendOut" class="small"></p></section>`;
+      <button class="pri" data-act="send">${esc(t('sendNow'))}</button><p id="err" class="err" role="alert"></p><p id="sendOut" class="small" aria-live="polite"></p></section>`;
   if (!w || Date.now() - w.at > 60_000) scanWallet().then(() => { if (view === 'wallet') viewWallet(); }).catch(() => {});
 }
 async function doSend() {
@@ -327,17 +329,17 @@ async function doSend() {
 function viewSettings() {
   V().innerHTML = `
     <section class="card"><h3>${esc(t('shopName'))}</h3><p class="small muted">${esc(t('shopHelp'))}</p>
-      <div class="row"><input id="shop" maxlength="40" value="${esc(S.shop)}" autocomplete="off"><button data-act="shop">${esc(t('save'))}</button></div></section>
+      <div class="row"><input id="shop" aria-label="${esc(t('shopName'))}" maxlength="40" value="${esc(S.shop)}" autocomplete="off"><button data-act="shop">${esc(t('save'))}</button></div></section>
     <section class="card"><h3>${esc(t('language'))}</h3>${langSwitch()}</section>
     <section class="card"><h3>${esc(t('catalog'))}</h3>${S.catalog.length ? `<ul class="list">${S.catalog.map((c, i) => `<li><span>${esc(c.name)}</span><b>${fmt(c.xof)} F</b><button data-act="uncat" data-v="${i}">${esc(t('removeItem'))}</button></li>`).join('')}</ul>` : '<p class="muted small">—</p>'}</section>
     <section class="card"><h3>☁ ${esc(t('cloud'))}</h3><p class="small muted">${esc(t('cloudHelp'))}</p>
       <label class="check"><input type="checkbox" id="autob" data-act="autob" ${S.autoBackup ? 'checked' : ''}> ${esc(t('cloudAuto'))}</label>
       <div class="row"><button data-act="backup-now">${esc(t('cloudNow'))}</button><button data-act="restore-now">${esc(t('cloudRestore'))}</button></div>
-      <p id="cloudOut" class="small">${S.lastBackup ? esc(t('cloudLast')) + ' ' + new Date(S.lastBackup * 1000).toLocaleString() : ''}</p></section>
+      <p id="cloudOut" class="small" aria-live="polite">${S.lastBackup ? esc(t('cloudLast')) + ' ' + new Date(S.lastBackup * 1000).toLocaleString() : ''}</p></section>
     <section class="card"><h3>⚡ ${esc(t('nwc'))}</h3><p class="small muted">${esc(t('nwcHelp'))}</p>
       ${S.nwc ? `<p class="ok">✔ ${esc(t('connected'))}</p><button data-act="nwc-off">${esc(t('disconnect'))}</button>`
-              : `<textarea id="nwc" rows="3" autocomplete="off" spellcheck="false" placeholder="nostr+walletconnect://…"></textarea><button class="pri" data-act="nwc-on">${esc(t('connect'))}</button>`}
-      <p id="err" class="err"></p></section>
+              : `<textarea id="nwc" aria-label="${esc(t('nwc'))}" rows="3" autocomplete="off" spellcheck="false" placeholder="nostr+walletconnect://…"></textarea><button class="pri" data-act="nwc-on">${esc(t('connect'))}</button>`}
+      <p id="err" class="err" role="alert"></p></section>
     <section class="card"><button data-act="backup">${esc(t('backup'))}</button><p id="phraseOut" class="mono small"></p>
       <button data-act="lock">${esc(t('lock'))}</button><button class="danger" data-act="reset">${esc(t('reset'))}</button></section>`;
 }
@@ -408,13 +410,13 @@ app.addEventListener('click', async (ev) => {
       case 'key': { const i = $('#amt'); i.value = v === '⌫' ? i.value.slice(0, -1) : (i.value + v).replace(/^0+/, '').slice(0, 9); break; }
       case 'cat': { const c = S.catalog[+v]; await startPayment({ xof: c.xof, item: c.name }); break; }
       case 'save-item': {
-        const name = $('#item').value.trim(), xof = parseInt($('#amt').value, 10);
+        const name = cleanText($('#item').value, 40), xof = parseInt($('#amt').value, 10);
         if (!name || !(xof > 0)) return showErr(t('errorAmount'));
         S.catalog = [{ name, xof }, ...S.catalog.filter((c) => c.name.toLowerCase() !== name.toLowerCase())].slice(0, 24); save(); render(); break;
       }
       case 'uncat': S.catalog.splice(+v, 1); save(); render(); break;
-      case 'charge': await startPayment({ xof: parseInt($('#amt').value, 10), item: $('#item').value.trim() }); break;
-      case 'note': { const note = $('#note').value.trim(); if (!note) return; b.disabled = true; await readNote(note); b.disabled = false; break; }
+      case 'charge': await startPayment({ xof: parseInt($('#amt').value, 10), item: cleanText($('#item').value, 60) }); break;
+      case 'note': { const note = cleanText($('#note').value, 300); if (!note) return; b.disabled = true; await readNote(note); b.disabled = false; break; }
       case 'mic': listen(b); break;
       case 'method': pay.stop?.(); pay.method = v; pay.error = null; pay.invoice = null; if (v === 'lightning' && !S.nwc) { pay.method = 'onchain'; pay.error = t('noLightning'); } viewPay(); watchPayment(pay); break;
       case 'cash': paid(pay, t('cash')); break;
@@ -422,9 +424,9 @@ app.addEventListener('click', async (ev) => {
       case 'new-sale': pay = null; render(); break;
       case 'copy': await navigator.clipboard?.writeText(v); b.textContent = t('copied'); break;
       case 'add-credit': {
-        const name = $('#cname').value.trim(), xof = parseInt($('#camt').value, 10);
+        const name = cleanText($('#cname').value, 40), xof = parseInt($('#camt').value, 10);
         if (!name || !(xof > 0)) return showErr(t('errorAmount'));
-        addCreditEntry(name, xof, $('#citem').value.trim(), $('#cphone').value.trim()); save(); render(); break;
+        addCreditEntry(name, xof, cleanText($('#citem').value, 60), $('#cphone').value.trim()); save(); render(); break;
       }
       case 'hist': openCustomer = openCustomer === v.toLowerCase() ? null : v.toLowerCase(); render(); break;
       case 'repay': {
@@ -442,7 +444,7 @@ app.addEventListener('click', async (ev) => {
         break;
       }
       case 'csv': download(`jaay-ventes-${today()}.csv`, toCsv(S.sales)); break;
-      case 'shop': S.shop = $('#shop').value.trim().slice(0, 40); save(); render(); break;
+      case 'shop': S.shop = cleanText($('#shop').value, 40); save(); render(); break;
       case 'refresh': walletCache = null; viewWallet(); break;
       case 'send': await doSend(); break;
       case 'nwc-on': {

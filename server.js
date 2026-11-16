@@ -5,6 +5,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseNote } from './src/shared/parse.js';
+import { cleanText } from './src/shared/text.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -48,7 +49,7 @@ export function createApp({ fetchImpl = fetch, now = () => Date.now(), geminiKey
   const limited = (ip) => { const t = now(); const h = (hits.get(ip) || []).filter((x) => t - x < 60_000); h.push(t); hits.set(ip, h); return h.length > 20; };
 
   app.post('/api/assist', async (req, res) => {
-    const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 300) : '';
+    const note = typeof req.body?.note === 'string' ? cleanText(req.body.note, 300) : '';
     if (!note) return res.status(400).json({ ok: false, error: 'Write what you sold, e.g. "Vendu 2 sacs de riz à 10000".' });
     if (limited(req.ip)) return res.status(429).json({ ok: false, error: 'Too many requests, wait a minute' });
     const offline = parseNote(note);
@@ -70,7 +71,7 @@ export function sanitize(ai, note) {
   const kind = ['sale', 'credit', 'repayment'].includes(ai?.kind) ? ai.kind : null;
   const amountXof = Math.round(Number(ai?.amountXof));
   if (!kind || !(amountXof > 0 && amountXof <= 10_000_000)) return { ok: false };
-  const clean = (s, n) => (typeof s === 'string' && s.trim() ? s.trim().replace(/[<>]/g, '').slice(0, n) : null);
+  const clean = (s, n) => { const v = typeof s === 'string' ? cleanText(s, n).replace(/[<>]/g, '') : ''; return v || null; };
   const customer = clean(ai.customer, 40);
   if (kind !== 'sale' && !customer) return { ok: false };
   return { ok: true, kind, amountXof, item: clean(ai.item, 80), customer, note };

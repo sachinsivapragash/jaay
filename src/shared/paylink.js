@@ -1,3 +1,5 @@
+import { cleanText } from './text.js';
+
 // Payment links that a seller can send by WhatsApp/SMS. Everything is in the URL fragment-free
 // query string, so the server stores nothing: /pay?a=<signet address>&s=<sats>&x=<FCFA>&m=<shop>&n=<note>
 const ADDR = /^tb1[02-9ac-hj-np-z]{8,87}$/; // bech32 charset, signet/testnet only
@@ -16,7 +18,7 @@ export function readPayLink(search) {
   const xof = parseInt(q.get('x'), 10);
   if (!ADDR.test(address)) return { ok: false, error: 'Invalid address' };
   if (!(sats >= 546 && sats <= 100_000_000)) return { ok: false, error: 'Invalid amount' };
-  const clean = (s) => (s ? String(s).replace(/[<>"'`]/g, '').slice(0, 60) : '');
+  const clean = (s) => (s ? cleanText(s, 60).replace(/[<>"'`]/g, '') : '');
   return { ok: true, address, sats, xof: xof > 0 ? xof : null, shop: clean(q.get('m')), note: clean(q.get('n')), bip21: `bitcoin:${address}?amount=${(sats / 1e8).toFixed(8)}` };
 }
 

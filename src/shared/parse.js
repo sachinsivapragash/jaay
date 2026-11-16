@@ -1,3 +1,5 @@
+import { cleanText } from './text.js';
+
 // Offline parser for short sale/credit notes in French or English, used when no AI key is set
 // (and to check the AI's answer). Examples:
 //   "Vendu 3 sacs de riz à 15000"          -> sale, 15000 XOF, "3 sacs de riz"
@@ -23,7 +25,7 @@ function amountOf(text) {
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function parseNote(input) {
-  const text = String(input || '').trim().slice(0, 300);
+  const text = cleanText(input, 300);
   if (!text) return { ok: false, error: 'Empty note' };
   const amount = amountOf(text);
   if (!(amount > 0)) return { ok: false, error: 'No amount found. Try: "Vendu 2 sacs de riz à 10000".' };
