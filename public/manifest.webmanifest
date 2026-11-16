@@ -1,0 +1,1 @@
+{ "name": "Jaay", "short_name": "Jaay", "description": "Point de vente Bitcoin et carnet de crédits", "start_url": "/", "display": "standalone", "background_color": "#f6f3ec", "theme_color": "#0e7a4b", "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }] }
