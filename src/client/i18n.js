@@ -54,6 +54,7 @@ export const MORE = {
     report: 'Rapport', last7: '7 derniers jours', exportCsv: 'Exporter (CSV)', sales: 'ventes', total: 'Total',
     byMethod: 'Par moyen de paiement', speak: 'Parler', listening: 'Je vous écoute…', noVoice: 'La dictée vocale n’est pas disponible sur ce téléphone.',
     history: 'Historique', creditGiven: 'crédit', repaid: 'remboursé', removeItem: 'Retirer', owedTotal: 'On vous doit',
+    cloud: 'Sauvegarde chiffrée (Nostr)', cloudHelp: 'Votre carnet et vos ventes, chiffrés avec une clé tirée de vos 12 mots, gardés sur des relais Nostr. Personne d’autre ne peut les lire. Avec vos 12 mots, tout revient sur un nouveau téléphone.', cloudAuto: 'Sauvegarder automatiquement', cloudNow: 'Sauvegarder maintenant', cloudRestore: 'Récupérer', cloudLast: 'Dernière sauvegarde :', cloudDone: 'Sauvegardé', cloudRestored: 'Récupéré', cloudNone: 'Aucune sauvegarde trouvée.',
     customersOwing: 'clients', paidOf: 'payé sur', askPayHelp: 'Le client peut payer avec ce lien, même plus tard.',
   },
   en: {
@@ -63,6 +64,7 @@ export const MORE = {
     report: 'Report', last7: 'Last 7 days', exportCsv: 'Export (CSV)', sales: 'sales', total: 'Total',
     byMethod: 'By payment method', speak: 'Speak', listening: 'Listening…', noVoice: 'Voice input is not available on this phone.',
     history: 'History', creditGiven: 'credit', repaid: 'repaid', removeItem: 'Remove', owedTotal: 'Owed to you',
+    cloud: 'Encrypted backup (Nostr)', cloudHelp: 'Your credit book and sales, encrypted with a key derived from your 12 words and kept on Nostr relays. Nobody else can read them. With your 12 words, everything comes back on a new phone.', cloudAuto: 'Back up automatically', cloudNow: 'Back up now', cloudRestore: 'Restore', cloudLast: 'Last backup:', cloudDone: 'Backed up', cloudRestored: 'Restored', cloudNone: 'No backup found.',
     customersOwing: 'customers', paidOf: 'paid of', askPayHelp: 'The customer can pay with this link, even later.',
   },
 };

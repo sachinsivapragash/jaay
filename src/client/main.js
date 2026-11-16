@@ -6,12 +6,28 @@ import { nwcClient } from './nwc.js';
 import { STRINGS, MORE } from './i18n.js';
 import { makePayLink, whatsappUrl, reminderText, receiptText } from '../shared/paylink.js';
 import { dayTotals, lastDays, toCsv } from '../shared/report.js';
+import * as NB from './nostr-backup.js';
 
 // ---------- state & storage ----------
 const KEY = 'jaay.v1';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 let S = Object.assign({ lang: (navigator.language || 'fr').startsWith('en') ? 'en' : 'fr', box: null, next: 0, changeNext: 0, sales: [], credits: {}, catalog: [], nwc: null, shop: '', rate: null }, load());
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* storage full or blocked */ } };
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* storage full or blocked */ } scheduleBackup(); };
+// Encrypted Nostr backup of the ledger, 20 s after the last change (only when the seller turned it on).
+let backupTimer = null;
+function scheduleBackup() {
+  if (!S.autoBackup || !mnemonic) return;
+  clearTimeout(backupTimer);
+  backupTimer = setTimeout(() => NB.backup(S, mnemonic).then((r) => { S.lastBackup = r.at; localStorage.setItem(KEY, JSON.stringify(S)); }).catch(() => {}), 20_000);
+}
+async function tryRestoreLedger() {
+  try {
+    const remote = await NB.restore(mnemonic);
+    if (!remote) return 0;
+    Object.assign(S, NB.mergeLedger(S, remote)); save();
+    return remote.sales.length + Object.keys(remote.credits).length;
+  } catch { return -1; }
+}
 let acct = null; // unlocked account (in memory only)
 let mnemonic = null;
 let view = 'sell';
@@ -314,6 +330,10 @@ function viewSettings() {
       <div class="row"><input id="shop" maxlength="40" value="${esc(S.shop)}" autocomplete="off"><button data-act="shop">${esc(t('save'))}</button></div></section>
     <section class="card"><h3>${esc(t('language'))}</h3>${langSwitch()}</section>
     <section class="card"><h3>${esc(t('catalog'))}</h3>${S.catalog.length ? `<ul class="list">${S.catalog.map((c, i) => `<li><span>${esc(c.name)}</span><b>${fmt(c.xof)} F</b><button data-act="uncat" data-v="${i}">${esc(t('removeItem'))}</button></li>`).join('')}</ul>` : '<p class="muted small">—</p>'}</section>
+    <section class="card"><h3>☁ ${esc(t('cloud'))}</h3><p class="small muted">${esc(t('cloudHelp'))}</p>
+      <label class="check"><input type="checkbox" id="autob" data-act="autob" ${S.autoBackup ? 'checked' : ''}> ${esc(t('cloudAuto'))}</label>
+      <div class="row"><button data-act="backup-now">${esc(t('cloudNow'))}</button><button data-act="restore-now">${esc(t('cloudRestore'))}</button></div>
+      <p id="cloudOut" class="small">${S.lastBackup ? esc(t('cloudLast')) + ' ' + new Date(S.lastBackup * 1000).toLocaleString() : ''}</p></section>
     <section class="card"><h3>⚡ ${esc(t('nwc'))}</h3><p class="small muted">${esc(t('nwcHelp'))}</p>
       ${S.nwc ? `<p class="ok">✔ ${esc(t('connected'))}</p><button data-act="nwc-off">${esc(t('disconnect'))}</button>`
               : `<textarea id="nwc" rows="3" autocomplete="off" spellcheck="false" placeholder="nostr+walletconnect://…"></textarea><button class="pri" data-act="nwc-on">${esc(t('connect'))}</button>`}
@@ -367,14 +387,17 @@ app.addEventListener('click', async (ev) => {
       case 'ob-restored': {
         const phrase = $('#phrase').value;
         if (!W.isValidMnemonic(phrase)) return showErr('✗ ' + t('restoreHelp'));
-        ob = { step: 'pin', words: phrase.trim().toLowerCase().split(/\s+/).join(' ') }; render(); break;
+        ob = { step: 'pin', restored: true, words: phrase.trim().toLowerCase().split(/\s+/).join(' ') }; render(); break;
       }
       case 'ob-pin': {
         const p1 = $('#p1').value, p2 = $('#p2').value;
         if (!W.validPin(p1)) return showErr(t('pinHelp'));
         if (p1 !== p2) return showErr(t('pinMismatch'));
+        const restoring = ob.restored;
         S.box = await W.encryptSecret(ob.words, p1); save();
-        mnemonic = ob.words; acct = W.account(mnemonic); ob = { step: 'start' }; touch(); render(); loadRate().then(() => view === 'sell' && !pay && render()); break;
+        mnemonic = ob.words; acct = W.account(mnemonic); ob = { step: 'start' }; touch(); render(); loadRate().then(() => view === 'sell' && !pay && render());
+        if (restoring) tryRestoreLedger().then((n) => { if (n > 0) { S.autoBackup = true; save(); render(); } });
+        break;
       }
       case 'unlock': {
         b.disabled = true;
@@ -429,6 +452,19 @@ app.addEventListener('click', async (ev) => {
         break;
       }
       case 'nwc-off': S.nwc = null; save(); render(); break;
+      case 'autob': S.autoBackup = b.checked; save(); break;
+      case 'backup-now': {
+        b.disabled = true; $('#cloudOut').textContent = '…';
+        try { const r = await NB.backup(S, mnemonic); S.lastBackup = r.at; save(); $('#cloudOut').textContent = `✔ ${t('cloudDone')} (${r.ok}/${r.of} relays)`; }
+        catch (e) { $('#cloudOut').textContent = '✗ ' + e.message; }
+        b.disabled = false; break;
+      }
+      case 'restore-now': {
+        b.disabled = true; $('#cloudOut').textContent = '…';
+        const n = await tryRestoreLedger();
+        $('#cloudOut').textContent = n > 0 ? `✔ ${t('cloudRestored')} (${n})` : n === 0 ? t('cloudNone') : '✗ relays';
+        b.disabled = false; break;
+      }
       case 'backup': $('#phraseOut').textContent = mnemonic; setTimeout(() => { const o = $('#phraseOut'); if (o) o.textContent = ''; }, 30_000); break;
       case 'lock': lock(); break;
       case 'reset': if (confirm(t('resetConfirm'))) { localStorage.removeItem(KEY); location.reload(); } break;

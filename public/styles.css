@@ -59,3 +59,4 @@ a{color:var(--acc)}
 .stats div{background:var(--bg);border-radius:10px;padding:8px}.stats b{display:block;font-size:18px}
 .mic.on{background:var(--err);color:#fff;border-color:var(--err)}
 .chart{width:100%;height:auto;color:var(--muted)}
+.check{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:15px}.check input{width:22px;height:22px;margin:0}
