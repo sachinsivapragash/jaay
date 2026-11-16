@@ -7,3 +7,7 @@ public/app.js.map
 video/
 *.log
 .claude/
+public/pay.js
+public/pay.js.map
+public/main.js
+public/main.js.map

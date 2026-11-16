@@ -44,3 +44,25 @@ export const STRINGS = {
     errorAmount: 'Enter an amount', aiBy: 'read by', noLightning: 'Connect a Lightning wallet in Settings.',
   },
 };
+
+// Strings for the extra features (catalogue, cash, WhatsApp, reports, voice).
+export const MORE = {
+  fr: {
+    cash: 'Espèces', paidCash: 'Payé en espèces', shareWa: 'Envoyer le lien par WhatsApp', receiptWa: 'Envoyer le reçu par WhatsApp',
+    saveItem: 'Garder dans le catalogue', catalog: 'Catalogue', remindWa: 'Relancer sur WhatsApp', phone: 'Téléphone (facultatif)',
+    shopName: 'Nom de la boutique', shopHelp: 'Apparaît sur les reçus et les rappels.', save: 'Enregistrer', saved: 'Enregistré',
+    report: 'Rapport', last7: '7 derniers jours', exportCsv: 'Exporter (CSV)', sales: 'ventes', total: 'Total',
+    byMethod: 'Par moyen de paiement', speak: 'Parler', listening: 'Je vous écoute…', noVoice: 'La dictée vocale n’est pas disponible sur ce téléphone.',
+    history: 'Historique', creditGiven: 'crédit', repaid: 'remboursé', removeItem: 'Retirer', owedTotal: 'On vous doit',
+    customersOwing: 'clients', paidOf: 'payé sur', askPayHelp: 'Le client peut payer avec ce lien, même plus tard.',
+  },
+  en: {
+    cash: 'Cash', paidCash: 'Paid in cash', shareWa: 'Send link on WhatsApp', receiptWa: 'Send receipt on WhatsApp',
+    saveItem: 'Save to catalogue', catalog: 'Catalogue', remindWa: 'Remind on WhatsApp', phone: 'Phone (optional)',
+    shopName: 'Shop name', shopHelp: 'Shown on receipts and reminders.', save: 'Save', saved: 'Saved',
+    report: 'Report', last7: 'Last 7 days', exportCsv: 'Export (CSV)', sales: 'sales', total: 'Total',
+    byMethod: 'By payment method', speak: 'Speak', listening: 'Listening…', noVoice: 'Voice input is not available on this phone.',
+    history: 'History', creditGiven: 'credit', repaid: 'repaid', removeItem: 'Remove', owedTotal: 'Owed to you',
+    customersOwing: 'customers', paidOf: 'paid of', askPayHelp: 'The customer can pay with this link, even later.',
+  },
+};

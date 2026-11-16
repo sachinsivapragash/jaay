@@ -1,33 +1,36 @@
-// Jaay phone app. Everything (keys, sales, credit book) stays on the device.
+// Jaay phone app. Everything (keys, sales, credit book, catalogue) stays on the device.
 import qrcode from 'qrcode-generator';
 import * as W from './wallet.js';
 import * as E from './esplora.js';
 import { nwcClient } from './nwc.js';
-import { STRINGS } from './i18n.js';
+import { STRINGS, MORE } from './i18n.js';
+import { makePayLink, whatsappUrl, reminderText, receiptText } from '../shared/paylink.js';
+import { dayTotals, lastDays, toCsv } from '../shared/report.js';
 
 // ---------- state & storage ----------
 const KEY = 'jaay.v1';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
-let S = Object.assign({ lang: (navigator.language || 'fr').startsWith('en') ? 'en' : 'fr', box: null, next: 0, sales: [], credits: {}, nwc: null }, load());
+let S = Object.assign({ lang: (navigator.language || 'fr').startsWith('en') ? 'en' : 'fr', box: null, next: 0, changeNext: 0, sales: [], credits: {}, catalog: [], nwc: null, shop: '', rate: null }, load());
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* storage full or blocked */ } };
 let acct = null; // unlocked account (in memory only)
 let mnemonic = null;
 let view = 'sell';
-let rate = null;
+let rate = S.rate; // last known rate is kept so prices still convert offline
 let pay = null; // active payment request
 let lockTimer = null;
 const GAP = 5;
 
-const t = (k, vars = {}) => (STRINGS[S.lang][k] || STRINGS.en[k] || k).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? '');
+const t = (k, vars = {}) => (STRINGS[S.lang][k] || MORE[S.lang][k] || STRINGS.en[k] || MORE.en[k] || k).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? '');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (n) => Math.round(n).toLocaleString(S.lang === 'fr' ? 'fr-FR' : 'en-US');
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
 const today = () => new Date().toISOString().slice(0, 10);
+const nowLabel = () => new Date().toLocaleString(S.lang === 'fr' ? 'fr-FR' : 'en-US', { dateStyle: 'short', timeStyle: 'short' });
 
 // ---------- rate ----------
 async function loadRate() {
-  try { const r = await fetch('/api/rate'); if (r.ok) rate = await r.json(); } catch { /* offline */ }
+  try { const r = await fetch('/api/rate'); if (r.ok) { rate = await r.json(); S.rate = rate; save(); } } catch { /* offline: keep last rate */ }
   return rate;
 }
 
@@ -40,17 +43,17 @@ function lock() { acct = null; mnemonic = null; pay?.stop?.(); pay = null; rende
 function render() {
   if (!S.box) return renderOnboarding();
   if (!acct) return renderUnlock();
-  const tabs = [['sell', '🛒', t('tabSell')], ['book', '📒', t('tabBook')], ['wallet', '₿', t('tabWallet')], ['settings', '⚙️', t('tabSettings')]];
+  const tabs = [['sell', '🛒', t('tabSell')], ['book', '📒', t('tabBook')], ['report', '📊', t('report')], ['wallet', '₿', t('tabWallet')], ['settings', '⚙️', t('tabSettings')]];
   app.innerHTML = `
-    <header class="top"><b>Jaay</b><span class="net">${esc(t('testnet'))}</span></header>
+    <header class="top"><b>Jaay${S.shop ? ' · ' + esc(S.shop) : ''}</b><span class="net">${esc(t('testnet'))}</span></header>
     <main id="view"></main>
     <nav class="tabs">${tabs.map(([k, ic, l]) => `<button data-act="tab" data-v="${k}" class="${view === k ? 'on' : ''}"><span>${ic}</span>${esc(l)}</button>`).join('')}</nav>`;
-  ({ sell: viewSell, book: viewBook, wallet: viewWallet, settings: viewSettings })[view]();
+  ({ sell: viewSell, book: viewBook, report: viewReport, wallet: viewWallet, settings: viewSettings })[view]();
 }
 const V = () => $('#view');
 
 // ---------- onboarding ----------
-let ob = { step: 'start', words: null, check: null, restore: false };
+let ob = { step: 'start', words: null, check: null };
 function renderOnboarding() {
   if (ob.step === 'start') {
     app.innerHTML = `<section class="hero"><h1>Jaay</h1><p>${esc(t('tagline'))}</p><p class="muted">${esc(t('testnet'))}</p>
@@ -89,27 +92,33 @@ function renderUnlock() {
 // ---------- sell ----------
 function viewSell() {
   if (pay) return viewPay();
-  const sum = S.sales.filter((s) => s.day === today() && s.paid).reduce((a, s) => a + s.xof, 0);
+  const d = dayTotals(S.sales, today());
   const sats1000 = rate ? W.xofToSats(1000, rate.btcEur) : null;
+  const voice = !!(globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition);
   V().innerHTML = `
     <section class="card">
+      ${S.catalog.length ? `<div class="chips">${S.catalog.map((c, i) => `<button data-act="cat" data-v="${i}">${esc(c.name)} · ${fmt(c.xof)}</button>`).join('')}</div>` : ''}
       <label>${esc(t('amountCfa'))}<input id="amt" inputmode="numeric" placeholder="0" autocomplete="off"></label>
       <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '000', 0, '⌫'].map((k) => `<button data-act="key" data-v="${k}">${k}</button>`).join('')}</div>
       <label>${esc(t('item'))}<input id="item" maxlength="60" autocomplete="off"></label>
       <p class="muted small">${sats1000 ? esc(t('rate', { sats: fmt(sats1000) })) : ''}</p>
       <button class="pri big" data-act="charge">${esc(t('charge'))}</button>
+      <button class="link small" data-act="save-item">＋ ${esc(t('saveItem'))}</button>
       <p id="err" class="err"></p>
     </section>
     <section class="card">
       <label>${esc(t('orWrite'))}<input id="note" maxlength="300" placeholder="${esc(t('writeExample'))}" autocomplete="off"></label>
-      <button data-act="note">${esc(t('read'))}</button><p id="noteOut" class="small"></p>
+      <div class="row"><button data-act="note">${esc(t('read'))}</button>${voice ? `<button class="mic" data-act="mic">🎙 ${esc(t('speak'))}</button>` : ''}</div>
+      <p id="noteOut" class="small"></p>
     </section>
-    <section class="card"><h3>${esc(t('todaySales'))} · ${fmt(sum)} FCFA</h3>${salesList()}</section>`;
+    <section class="card"><h3>${esc(t('todaySales'))}</h3>
+      <div class="stats"><div><b>${fmt(d.total)}</b>FCFA</div><div><b>${d.count}</b>${esc(t('sales'))}</div><div><b>${fmt(d.sats)}</b>sats</div></div>
+      ${salesList()}</section>`;
 }
 function salesList() {
   const list = S.sales.filter((s) => s.day === today()).slice(0, 20);
   if (!list.length) return `<p class="muted">${esc(t('noSales'))}</p>`;
-  return `<ul class="list">${list.map((s) => `<li><span>${esc(s.item || '—')}</span><b>${fmt(s.xof)} F</b><span class="tag ${s.paid ? 'ok' : ''}">${s.paid ? '✔ ' + esc(s.method) : '…'}</span></li>`).join('')}</ul>`;
+  return `<ul class="list">${list.map((s) => `<li><span>${esc(s.item || '—')}${s.customer ? ' · ' + esc(s.customer) : ''}</span><b>${fmt(s.xof)} F</b><span class="tag ${s.paid ? 'ok' : ''}">${s.paid ? '✔ ' + esc(s.method) : '…'}</span></li>`).join('')}</ul>`;
 }
 
 async function startPayment({ xof, item, customer = null }) {
@@ -158,61 +167,92 @@ async function watchPayment(p) {
 }
 function paid(p, method) {
   if (pay !== p) return;
+  p.stop?.();
   p.status = 'paid'; p.method_done = method;
-  S.sales.unshift({ id: p.id, day: today(), at: Date.now(), xof: p.xof, sats: p.sats, item: p.item, customer: p.customer, paid: true, method });
-  if (p.customer) addCreditEntry(p.customer, -p.xof, `${method}`);
-  S.sales = S.sales.slice(0, 500); save();
+  S.sales.unshift({ id: p.id, day: today(), at: Date.now(), xof: p.xof, sats: method === t('cash') ? 0 : p.sats, item: p.item, customer: p.customer, paid: true, method });
+  if (p.customer) addCreditEntry(p.customer, -p.xof, method);
+  S.sales = S.sales.slice(0, 2000); save();
   navigator.vibrate?.([80, 40, 160]);
   viewPay();
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function viewPay() {
-  if (view !== 'sell') return;
+  if (view !== 'sell' || !pay) return;
   const p = pay;
   if (p.status === 'paid') {
-    V().innerHTML = `<section class="card paid"><div class="big-ok">✔</div><h2>${esc(t('paid'))}</h2><p><b>${fmt(p.xof)} FCFA</b> · ${fmt(p.sats)} sats · ${esc(p.method_done)}</p>
+    const receipt = receiptText({ item: p.item, xof: p.xof, sats: p.method_done === t('cash') ? 0 : p.sats, method: p.method_done, shop: S.shop, when: nowLabel() });
+    V().innerHTML = `<section class="card paid"><div class="big-ok">✔</div><h2>${esc(t('paid'))}</h2><p><b>${fmt(p.xof)} FCFA</b>${p.method_done === t('cash') ? '' : ` · ${fmt(p.sats)} sats`} · ${esc(p.method_done)}</p>
+      <a class="btnlink wa" href="${esc(whatsappUrl(receipt, p.phone))}" target="_blank" rel="noopener noreferrer">💬 ${esc(t('receiptWa'))}</a>
       <button class="pri big" data-act="new-sale">${esc(t('newSale'))}</button></section>`;
     return;
   }
   const uri = p.method === 'lightning' && p.invoice ? `lightning:${p.invoice}` : `bitcoin:${p.address}?amount=${(p.sats / 1e8).toFixed(8)}&label=Jaay`;
-  const qr = qrcode(0, 'M'); qr.addData(uri.toUpperCase().startsWith('LIGHTNING:') ? uri.toUpperCase() : uri); qr.make();
+  const qr = qrcode(0, 'M'); qr.addData(uri.startsWith('lightning:') ? uri.toUpperCase() : uri); qr.make();
   const ready = p.method === 'onchain' || p.invoice;
+  const link = makePayLink(location.origin, { address: p.address, sats: p.sats, xof: p.xof, shop: S.shop, note: p.item });
   V().innerHTML = `<section class="card pay">
       <p class="amount">${fmt(p.xof)} FCFA</p><p class="muted">${fmt(p.sats)} sats${p.item ? ' · ' + esc(p.item) : ''}${p.customer ? ' · ' + esc(p.customer) : ''}</p>
       <div class="seg"><span>${esc(t('payWith'))}</span>
         <button data-act="method" data-v="lightning" class="${p.method === 'lightning' ? 'on' : ''}">⚡ ${esc(t('lightning'))}</button>
-        <button data-act="method" data-v="onchain" class="${p.method === 'onchain' ? 'on' : ''}">₿ ${esc(t('onchain'))}</button></div>
+        <button data-act="method" data-v="onchain" class="${p.method === 'onchain' ? 'on' : ''}">₿ ${esc(t('onchain'))}</button>
+        <button data-act="cash">💵 ${esc(t('cash'))}</button></div>
       ${p.error ? `<p class="err">${esc(p.error)}</p>` : ''}
       <div class="qr">${ready ? qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }) : '<p class="muted">…</p>'}</div>
       <p class="muted small">${esc(t('scan'))}</p>
       <p class="mono small">${esc(p.method === 'lightning' ? (p.invoice || '').slice(0, 32) + '…' : p.address)}</p>
-      <button data-act="copy" data-v="${esc(uri)}">${esc(t('copy'))}</button>
+      <div class="row"><button data-act="copy" data-v="${esc(uri)}">${esc(t('copy'))}</button></div>
+      ${p.method === 'onchain' ? `<a class="btnlink wa" href="${esc(whatsappUrl(`${S.shop ? S.shop + ' : ' : ''}${p.item || 'Paiement'} — ${fmt(p.xof)} FCFA. ${link}`))}" target="_blank" rel="noopener noreferrer">💬 ${esc(t('shareWa'))}</a>` : ''}
       <p class="wait">${navigator.onLine ? esc(t('waiting')) : esc(t('offline'))}</p>
       <button class="link" data-act="cancel-pay">${esc(t('cancel'))}</button></section>`;
 }
 
 // ---------- credit book ----------
-function addCreditEntry(name, xof, note) {
+function addCreditEntry(name, xof, note, phone) {
   const key = name.trim().toLowerCase();
   const c = S.credits[key] || (S.credits[key] = { name: name.trim(), entries: [] });
+  if (phone) c.phone = String(phone).replace(/[^\d+]/g, '').slice(0, 16);
   c.entries.unshift({ at: Date.now(), xof, note: String(note || '').slice(0, 80) });
   c.entries = c.entries.slice(0, 200);
 }
 const owed = (c) => c.entries.reduce((s, e) => s + e.xof, 0);
+let openCustomer = null;
 function viewBook() {
   const list = Object.values(S.credits).map((c) => ({ ...c, owed: owed(c) })).sort((a, b) => b.owed - a.owed);
-  const total = list.reduce((s, c) => s + Math.max(0, c.owed), 0);
+  const owing = list.filter((c) => c.owed > 0);
+  const total = owing.reduce((s, c) => s + c.owed, 0);
   V().innerHTML = `
-    <section class="card"><h3>${esc(t('book'))} · ${fmt(total)} FCFA</h3>
-      ${list.length ? `<ul class="list">${list.map((c) => `<li><span>${esc(c.name)}</span><b>${c.owed > 0 ? fmt(c.owed) + ' F' : esc(t('settled'))}</b>
-        ${c.owed > 0 ? `<button data-act="askpay" data-v="${esc(c.name)}">${esc(t('askPay'))}</button><button data-act="repay" data-v="${esc(c.name)}">${esc(t('recordRepay'))}</button>` : ''}</li>`).join('')}</ul>` : `<p class="muted">${esc(t('nobodyOwes'))}</p>`}
+    <section class="card"><h3>${esc(t('book'))}</h3>
+      <div class="stats"><div><b>${fmt(total)}</b>FCFA</div><div><b>${owing.length}</b>${esc(t('customersOwing'))}</div><div><b>${list.length}</b>${esc(t('customer'))}s</div></div>
+      ${list.length ? `<ul class="list">${list.map((c) => `<li><span>${esc(c.name)}${c.phone ? ' 📱' : ''}</span><b>${c.owed > 0 ? fmt(c.owed) + ' F' : esc(t('settled'))}</b>
+        <button data-act="hist" data-v="${esc(c.name)}">${esc(t('history'))}</button>
+        ${c.owed > 0 ? `<button data-act="askpay" data-v="${esc(c.name)}">${esc(t('askPay'))}</button><button data-act="remind" data-v="${esc(c.name)}">💬 ${esc(t('remindWa'))}</button><button data-act="repay" data-v="${esc(c.name)}">${esc(t('recordRepay'))}</button>` : ''}
+        ${openCustomer === c.name.toLowerCase() ? `<ul class="list small">${c.entries.slice(0, 10).map((e) => `<li><span>${new Date(e.at).toLocaleDateString()} · ${esc(e.note || '')}</span><b>${e.xof > 0 ? '+' : ''}${fmt(e.xof)} F</b></li>`).join('')}</ul>` : ''}</li>`).join('')}</ul>` : `<p class="muted">${esc(t('nobodyOwes'))}</p>`}
     </section>
     <section class="card"><h3>${esc(t('addCredit'))}</h3>
       <label>${esc(t('customer'))}<input id="cname" maxlength="40" autocomplete="off"></label>
       <label>${esc(t('amountCfa'))}<input id="camt" inputmode="numeric" autocomplete="off"></label>
       <label>${esc(t('item'))}<input id="citem" maxlength="60" autocomplete="off"></label>
+      <label>${esc(t('phone'))}<input id="cphone" inputmode="tel" maxlength="16" autocomplete="off" placeholder="+221…"></label>
       <button class="pri" data-act="add-credit">${esc(t('addCredit'))}</button><p id="err" class="err"></p></section>`;
+}
+
+// ---------- report ----------
+function viewReport() {
+  const days = lastDays(S.sales, 7);
+  const max = Math.max(1, ...days.map((d) => d.total));
+  const d = dayTotals(S.sales, today());
+  const bars = days.map((x, i) => {
+    const h = Math.round((x.total / max) * 100);
+    return `<rect x="${i * 44 + 6}" y="${110 - h}" width="32" height="${Math.max(h, 1)}" rx="4" fill="#0e7a4b"/><text x="${i * 44 + 22}" y="126" font-size="11" text-anchor="middle" fill="currentColor">${esc(x.day.slice(8))}</text>`;
+  }).join('');
+  V().innerHTML = `
+    <section class="card"><h3>${esc(t('last7'))}</h3>
+      <svg viewBox="0 0 310 130" class="chart" role="img" aria-label="${esc(t('last7'))}">${bars}</svg>
+      <p class="muted small">${esc(t('total'))} : ${fmt(days.reduce((s, x) => s + x.total, 0))} FCFA · ${days.reduce((s, x) => s + x.count, 0)} ${esc(t('sales'))}</p></section>
+    <section class="card"><h3>${esc(t('byMethod'))} (${esc(t('todaySales').toLowerCase())})</h3>
+      ${Object.keys(d.byMethod).length ? `<ul class="list">${Object.entries(d.byMethod).map(([m, v]) => `<li><span>${esc(m)}</span><b>${fmt(v)} F</b></li>`).join('')}</ul>` : `<p class="muted">${esc(t('noSales'))}</p>`}
+      <button data-act="csv">⬇ ${esc(t('exportCsv'))}</button></section>`;
 }
 
 // ---------- wallet ----------
@@ -220,11 +260,10 @@ let walletCache = null;
 async function scanWallet() {
   const used = [];
   for (const chain of [0, 1]) {
-    const limit = chain === 0 ? S.next + GAP : (S.changeNext || 0) + GAP;
+    const limit = (chain === 0 ? S.next : S.changeNext || 0) + GAP;
     for (let i = 0; i < limit; i++) {
       const address = acct.address(chain, i);
-      const st = await E.addressStats(address);
-      const b = E.balanceOf(st);
+      const b = E.balanceOf(await E.addressStats(address));
       if (b.used) used.push({ chain, index: i, address, ...b });
     }
   }
@@ -232,9 +271,7 @@ async function scanWallet() {
   for (const u of used.filter((x) => x.confirmed + x.pending > 0)) {
     for (const o of await E.utxos(u.address)) utxos.push({ txid: o.txid, vout: o.vout, value: o.value, chain: u.chain, index: u.index, confirmed: o.status.confirmed });
   }
-  const confirmed = utxos.filter((u) => u.confirmed).reduce((s, u) => s + u.value, 0);
-  const pending = utxos.filter((u) => !u.confirmed).reduce((s, u) => s + u.value, 0);
-  walletCache = { utxos, confirmed, pending, at: Date.now() };
+  walletCache = { utxos, confirmed: utxos.filter((u) => u.confirmed).reduce((s, u) => s + u.value, 0), pending: utxos.filter((u) => !u.confirmed).reduce((s, u) => s + u.value, 0), at: Date.now() };
   return walletCache;
 }
 function viewWallet() {
@@ -273,13 +310,41 @@ async function doSend() {
 // ---------- settings ----------
 function viewSettings() {
   V().innerHTML = `
+    <section class="card"><h3>${esc(t('shopName'))}</h3><p class="small muted">${esc(t('shopHelp'))}</p>
+      <div class="row"><input id="shop" maxlength="40" value="${esc(S.shop)}" autocomplete="off"><button data-act="shop">${esc(t('save'))}</button></div></section>
     <section class="card"><h3>${esc(t('language'))}</h3>${langSwitch()}</section>
+    <section class="card"><h3>${esc(t('catalog'))}</h3>${S.catalog.length ? `<ul class="list">${S.catalog.map((c, i) => `<li><span>${esc(c.name)}</span><b>${fmt(c.xof)} F</b><button data-act="uncat" data-v="${i}">${esc(t('removeItem'))}</button></li>`).join('')}</ul>` : '<p class="muted small">—</p>'}</section>
     <section class="card"><h3>⚡ ${esc(t('nwc'))}</h3><p class="small muted">${esc(t('nwcHelp'))}</p>
       ${S.nwc ? `<p class="ok">✔ ${esc(t('connected'))}</p><button data-act="nwc-off">${esc(t('disconnect'))}</button>`
               : `<textarea id="nwc" rows="3" autocomplete="off" spellcheck="false" placeholder="nostr+walletconnect://…"></textarea><button class="pri" data-act="nwc-on">${esc(t('connect'))}</button>`}
       <p id="err" class="err"></p></section>
     <section class="card"><button data-act="backup">${esc(t('backup'))}</button><p id="phraseOut" class="mono small"></p>
       <button data-act="lock">${esc(t('lock'))}</button><button class="danger" data-act="reset">${esc(t('reset'))}</button></section>`;
+}
+
+// ---------- notes (typed or spoken) ----------
+async function readNote(note) {
+  const r = await (await fetch('/api/assist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note }) })).json().catch(() => ({ ok: false, error: 'Offline' }));
+  if (!r.ok) { $('#noteOut').textContent = r.error || '✗'; return; }
+  $('#noteOut').textContent = `${r.kind} · ${fmt(r.amountXof)} FCFA${r.item ? ' · ' + r.item : ''}${r.customer ? ' · ' + r.customer : ''} (${t('aiBy')} ${r.by})`;
+  if (r.kind === 'sale') await startPayment({ xof: r.amountXof, item: r.item || '' });
+  else if (r.kind === 'credit') { addCreditEntry(r.customer, r.amountXof, r.item || r.note); save(); view = 'book'; render(); }
+  else if (r.kind === 'repayment') { addCreditEntry(r.customer, -r.amountXof, t('cash')); save(); view = 'book'; render(); }
+}
+function listen(btn) {
+  const SR = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
+  if (!SR) return showErr(t('noVoice'));
+  const rec = new SR(); rec.lang = S.lang === 'fr' ? 'fr-SN' : 'en-US'; rec.interimResults = false;
+  btn.classList.add('on'); btn.textContent = '🎙 ' + t('listening');
+  rec.onresult = (e) => { const text = e.results[0][0].transcript; $('#note').value = text; readNote(text); };
+  rec.onend = () => { btn.classList.remove('on'); btn.textContent = '🎙 ' + t('speak'); };
+  rec.onerror = () => showErr(t('noVoice'));
+  rec.start();
+}
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
 }
 
 // ---------- events ----------
@@ -308,51 +373,57 @@ app.addEventListener('click', async (ev) => {
         const p1 = $('#p1').value, p2 = $('#p2').value;
         if (!W.validPin(p1)) return showErr(t('pinHelp'));
         if (p1 !== p2) return showErr(t('pinMismatch'));
-        S.box = await W.encryptSecret(ob.words, p1); S.next = S.next || 0; save();
+        S.box = await W.encryptSecret(ob.words, p1); save();
         mnemonic = ob.words; acct = W.account(mnemonic); ob = { step: 'start' }; touch(); render(); loadRate().then(() => view === 'sell' && !pay && render()); break;
       }
       case 'unlock': {
         b.disabled = true;
-        try { mnemonic = await W.decryptSecret(S.box, $('#pin').value); acct = W.account(mnemonic); touch(); loadRate().then(() => view === 'sell' && !pay && render()); render(); }
+        try { mnemonic = await W.decryptSecret(S.box, $('#pin').value); acct = W.account(mnemonic); touch(); render(); loadRate().then(() => view === 'sell' && !pay && render()); }
         catch (e) { showErr(e.message); b.disabled = false; }
         break;
       }
-      case 'key': {
-        const i = $('#amt'); i.value = v === '⌫' ? i.value.slice(0, -1) : (i.value + v).replace(/^0+/, '').slice(0, 9); break;
+      case 'key': { const i = $('#amt'); i.value = v === '⌫' ? i.value.slice(0, -1) : (i.value + v).replace(/^0+/, '').slice(0, 9); break; }
+      case 'cat': { const c = S.catalog[+v]; await startPayment({ xof: c.xof, item: c.name }); break; }
+      case 'save-item': {
+        const name = $('#item').value.trim(), xof = parseInt($('#amt').value, 10);
+        if (!name || !(xof > 0)) return showErr(t('errorAmount'));
+        S.catalog = [{ name, xof }, ...S.catalog.filter((c) => c.name.toLowerCase() !== name.toLowerCase())].slice(0, 24); save(); render(); break;
       }
+      case 'uncat': S.catalog.splice(+v, 1); save(); render(); break;
       case 'charge': await startPayment({ xof: parseInt($('#amt').value, 10), item: $('#item').value.trim() }); break;
-      case 'note': {
-        const note = $('#note').value.trim(); if (!note) return;
-        b.disabled = true;
-        const r = await (await fetch('/api/assist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note }) })).json().catch(() => ({ ok: false, error: 'Offline' }));
-        b.disabled = false;
-        if (!r.ok) { $('#noteOut').textContent = r.error || '✗'; return; }
-        $('#noteOut').textContent = `${r.kind} · ${fmt(r.amountXof)} FCFA${r.item ? ' · ' + r.item : ''}${r.customer ? ' · ' + r.customer : ''} (${t('aiBy')} ${r.by})`;
-        if (r.kind === 'sale') await startPayment({ xof: r.amountXof, item: r.item || '' });
-        else if (r.kind === 'credit') { addCreditEntry(r.customer, r.amountXof, r.item || r.note); save(); view = 'book'; render(); }
-        else if (r.kind === 'repayment') { addCreditEntry(r.customer, -r.amountXof, 'cash'); save(); view = 'book'; render(); }
-        break;
-      }
+      case 'note': { const note = $('#note').value.trim(); if (!note) return; b.disabled = true; await readNote(note); b.disabled = false; break; }
+      case 'mic': listen(b); break;
       case 'method': pay.stop?.(); pay.method = v; pay.error = null; pay.invoice = null; if (v === 'lightning' && !S.nwc) { pay.method = 'onchain'; pay.error = t('noLightning'); } viewPay(); watchPayment(pay); break;
+      case 'cash': paid(pay, t('cash')); break;
       case 'cancel-pay': pay?.stop?.(); pay = null; render(); break;
       case 'new-sale': pay = null; render(); break;
       case 'copy': await navigator.clipboard?.writeText(v); b.textContent = t('copied'); break;
       case 'add-credit': {
         const name = $('#cname').value.trim(), xof = parseInt($('#camt').value, 10);
         if (!name || !(xof > 0)) return showErr(t('errorAmount'));
-        addCreditEntry(name, xof, $('#citem').value.trim()); save(); render(); break;
+        addCreditEntry(name, xof, $('#citem').value.trim(), $('#cphone').value.trim()); save(); render(); break;
       }
+      case 'hist': openCustomer = openCustomer === v.toLowerCase() ? null : v.toLowerCase(); render(); break;
       case 'repay': {
         const amt = parseInt(prompt(`${t('recordRepay')} — ${v} (FCFA)`) || '', 10);
-        if (amt > 0) { addCreditEntry(v, -amt, 'cash'); save(); render(); }
+        if (amt > 0) { addCreditEntry(v, -amt, t('cash')); save(); render(); }
         break;
       }
-      case 'askpay': { const c = S.credits[v.toLowerCase()]; view = 'sell'; await startPayment({ xof: owed(c), item: `${t('book')}`, customer: c.name }); break; }
+      case 'askpay': { const c = S.credits[v.toLowerCase()]; view = 'sell'; await startPayment({ xof: owed(c), item: t('book'), customer: c.name }); break; }
+      case 'remind': {
+        const c = S.credits[v.toLowerCase()];
+        if (!rate) await loadRate();
+        const xof = owed(c); const index = S.next++; save();
+        const link = makePayLink(location.origin, { address: acct.address(0, index), sats: W.xofToSats(xof, rate.btcEur), xof, shop: S.shop, note: c.name });
+        window.open(whatsappUrl(reminderText({ name: c.name, xof, link, shop: S.shop }), c.phone), '_blank', 'noopener');
+        break;
+      }
+      case 'csv': download(`jaay-ventes-${today()}.csv`, toCsv(S.sales)); break;
+      case 'shop': S.shop = $('#shop').value.trim().slice(0, 40); save(); render(); break;
       case 'refresh': walletCache = null; viewWallet(); break;
       case 'send': await doSend(); break;
       case 'nwc-on': {
-        const uri = $('#nwc').value.trim();
-        b.disabled = true;
+        const uri = $('#nwc').value.trim(); b.disabled = true;
         try { const c = nwcClient(uri, { timeoutMs: 15000 }); await c.getInfo(); c.close(); S.nwc = uri; save(); render(); }
         catch (e) { showErr(e.message); b.disabled = false; }
         break;
@@ -365,7 +436,11 @@ app.addEventListener('click', async (ev) => {
     }
   } catch (e) { showErr(e.message); }
 });
-app.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'pin') $('[data-act=unlock]')?.click(); });
+app.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  if (e.target.id === 'pin') $('[data-act=unlock]')?.click();
+  if (e.target.id === 'note') $('[data-act=note]')?.click();
+});
 addEventListener('online', () => pay && viewPay());
 addEventListener('offline', () => pay && viewPay());
 
