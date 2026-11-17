@@ -11,7 +11,7 @@ A bitcoin point of sale, credit book and non-custodial wallet for market sellers
 ## Links
 - Live app: https://jaay-r9za.onrender.com (signet test network)
 - Code (MIT): https://github.com/sachinsivapragash/jaay
-- Demo video: <YouTube link>
+- Demo video: https://www.youtube.com/watch?v=PeiF-Q9WGiY
 
 ## Inspiration
 Walk through Sandaga or Tilène market and you will see the same thing at almost every stall: a small notebook of debts. *Awa doit 2 500 pour le poisson.* Credit is how the market works, but debts get forgotten, disputes are common, and chasing a customer is awkward. Customers increasingly want to pay from their phones, but bitcoin wallets show prices in BTC or USD, assume fast data, and know nothing about credit. We wanted a tool that fits how a seller already works: price in CFA, take payment however the customer can pay, remember who owes what, and remind them politely on WhatsApp.
