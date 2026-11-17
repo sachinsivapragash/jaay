@@ -24,6 +24,8 @@ export function createApp({ fetchImpl = fetch, now = () => Date.now(), geminiKey
     next();
   });
   app.use(express.json({ limit: '4kb' }));
+  // Source archive and demo video: public files, fetchable from any site (no cookies, no secrets).
+  app.use('/downloads', (req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); next(); });
   app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], maxAge: '1h', setHeaders: (res, p) => { if (/sw\.js$|index\.html$/.test(p)) res.set('Cache-Control', 'no-cache'); } }));
 
   app.get('/health', (req, res) => res.json({ ok: true, ai: geminiKey ? 'gemini' : 'offline-parser' }));
